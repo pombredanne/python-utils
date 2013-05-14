@@ -154,3 +154,9 @@ class ShaderMiscellaneousControl():
 			mypos = (number * 1.5 - 0.6, 0, -0.3)
 			button = DirectRadioButton(text='DetailTex'+str(number), variable=self.detail,value=[number], scale=0.15, pos=mypos, command=self.switchDetailTexture, parent=self.frame)
 			self.detailTexButtons.append(button)
+			
+		for button in self.detailTexButtons:
+			button.setOthers(self.detailTexButtons)
+			
+		self.fogDensity = sg.fogDensity
+		self.fogDensitySlide = SlideControl(0, -0.7, parent=self.frame, range(0, 0.1), value=self.fogDensity, name="Fog Density", function=self.setFogDensity, ysize=1.5, xsize=1.5)
