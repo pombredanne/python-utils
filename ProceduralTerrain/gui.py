@@ -160,3 +160,89 @@ class ShaderMiscellaneousControl():
 			
 		self.fogDensity = sg.fogDensity
 		self.fogDensitySlide = SlideControl(0, -0.7, parent=self.frame, range(0, 0.1), value=self.fogDensity, name="Fog Density", function=self.setFogDensity, ysize=1.5, xsize=1.5)
+		
+	def setDiffuseTextures(self, status):
+		if status:
+			self.terrain.setShaderFloatInput("debugDisableDiffuse", 1.0)
+		else:
+			self.terrain.setShaderFloatInput("debugDisableDiffuse", 0.0)
+			
+	def setAmbientOcclusion(self, status):
+		if status:
+			self.terrain.setShaderFloatInput("ambientOcclusion", 1.0)
+		else:
+			self.terrain.setShaderFloatInput("ambientOcclusion", 0.0)
+			
+	def switchDetailTexture(self, status=None):
+		if self.detail[0] == 0:
+			self.terrain.texturer.shaderGenerator.setDetail(self.terrain.texturer.detailTex)
+		if self.detail[0] == 1:
+			self.terrain.texturer.shaderGenerator.setDetail(self.terrain.texturer.detailTex2)
+			
+	def setFogDensity(self, input):
+		self.fogDensity = input
+		self.terrain.setShaderFloatInput("fogDensity", self.fogDensity)
+		
+	def resize(self, size):
+		self.size = size
+		vertical = size[1] - size[0]
+		horizontal = size[3] - size[2]
+		self.frame.setScale(horizontal / 2, 1, vertical / 2)
+		
+	def destroy(self):
+		self.frame.destroy()
+		
+###############################################################################
+#   TerrainShaderControl
+###############################################################################
+class TerrainShaderControl():
+	def __init__(self, x, y, terrain, parent=aspect2d):
+		self.terrain = terrain
+		
+		size = 1.0
+		self.size = (-size, size, -size, size)
+		self.frame = DirectFrame(frameColor=(0,0,0,0), frameSize=self.size, pos=(x,0,y), parent=parent)
+		self.buttons = []
+		self.v = [0]
+		iter = 0
+		self.shaderControl = None
+		
+		self.addControl('Detail')
+		self.addControl('Misc')
+		
+		while (self.terrain.getShaderInput('region' + str(iter) + 'Limits').getValueType()):
+			iter += 1
+			name = 'Region ' + str(iter-1)
+			self.addControl(name)
+			
+	def addControl(self, name):
+		number = len(self.buttons)
+		mypos = (number * 0.3 - 0.5, 0, 0.04)
+		
+		button = DirectRadioButton(text=name, variable=self.v, value=[number-2], scale=0.05, pos=mypos, command=self.switchShaderControl, parent=self.frame)
+		self.buttons.append(button)
+		for button in self.buttons:
+			button.setOthers(self.buttons)
+			
+	# Callback function for radio buttons
+	def switchShaderControl(self, status=None):
+		if self.shaderControl:
+			self.shaderControl.destroy()
+		if self.v[0] > -1:
+			self.shaderControl = ShaderRegionControl(0, -0.35, self.v[0], self.terrain, parent=self.frame)
+		elif self.v[0] == -1:
+			self.shaderControl = ShaderMiscellaneousControl(0, -0.35, self.terrain, parent=self.frame)
+		elif self.v[0] == -2:
+			self.shaderControl = ShaderDetailControl(0, -0.35, self.terrain, parent=self.frame)
+			
+	def show(self):
+		self.frame.show()
+		
+	def hide(self):
+		self.frame.hide()
+		
+	def setHidden(self, boolean):
+		if boolean:
+			self.hide()
+		else:
+			self.show()
