@@ -217,3 +217,54 @@ class Terrain(NodePath):
 		
 		##### rendering properties
 		self.initializeRenderProperties()
+		
+		##### task handling
+        #self._setupThreadedTasks()
+
+        # newTile is a placeholder for a tile currently under construction
+        # this has to be initialized last because it requires values from self
+        #self.newTile = TerrainTile(self, 0, 0)
+        # loads all terrain tiles in range immediately
+		if THREAD_LOAD_TERRAIN:	
+			self.preload(self.focus.getX() / self.horizontalScale, self.focus.getY() / self.horizontalScale)
+		else:
+			taskMgr.add(self.oldPreload, "preloadTask", extraArgs=[self.focus.getX() / self.horizontalScale, self.focus.getY() / self.horizontalScale])
+			
+		#self.flattenLight()
+		
+	def initializeHeightMap(self, id=0):
+		""" """
+		
+		logging.info("initalizing heightmap...")
+		
+		if id == 0:
+			self.dice = RandomNumGen(TimeVal().getUsec())
+			id = self.dice.randint(2, 1000000)
+		self.id = id
+		
+		#Remove old tiles that will not conform to a new heightmap
+		for pos, tile in self.tiles.items():
+			self.deleteTile(pos)
+		self.storage.clear()
+		
+		self.heightMap = HeightMap(id, self.waterHeight + 0.03)
+		self.getHeight = self.heightMap.getHeight
+		
+	def initializeRenderingProperties(self):
+		logging.info("initializing terrain rendering properties...")
+		#self.bruteForce = True
+		self.bruteForce = BRUTE_FORCE_TILES
+		if self.bruteForce:
+			self.blockSize = self.tileSize
+		else:
+			#self.blockSize = 16
+			self.blockSize = self.tileSize
+			self.near = 100
+			self.far = self.maxViewRange * 0.5 + self.blockSize
+		self.wireFrame = 0
+		#self.texturer = MonoTexturer(self)
+		self.texturer = ShaderTexturer(self)
+		#self.texturer = DetailTexturer(self)
+		#self.texturer.apply(self)
+		#self.setShaderInput("zMultiplier",)
+		loggin.info("rendering properties initialized...")
