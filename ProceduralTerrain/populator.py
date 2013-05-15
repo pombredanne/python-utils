@@ -62,3 +62,58 @@ sphere = loader.loadModel("models/sphere")
 def makeSphere():
 	np = NodePath()
 	sphere.copyTo(np)
+	#np = self.model.instanceTo(self.grassNP)
+	#np = loader.loadModel('models/grass.egg')
+	#np.reparentTo(self.grassNP)
+	#np.setTwoSided(True)
+	#np.setHpr(Vec3(heading,0,0))
+	#np.setPos(pos)
+	logging.info(np)
+	return np
+	
+class Factory():
+	def __init__(self, factoryFunction, constructorParams, averageNumber):
+		self.factoryFunction = factoryFunction
+		self.constructorParams = constructorParams
+		self.averageNumber = averageNumber
+		
+class TerrainPopulator():
+	def __init__(self):
+		self.factories = []
+		
+	def addObject(self, factoryFunction, constructorParams, averageNumber):
+		factory = Factory(factoryFunction, constructorParams, averageNumber)
+		self.factories.append(factory)
+		
+	def populate(self, tile):
+		terrain = tile.terrain
+		xOff = tile.xOffset
+		yOff = tile.yOffset
+		tileSize = terrain.tileSize
+		
+		seed = terrain.heightMap.getHeight(yOff * -2, xOff * -2)+1 * 2147483647
+		dice = RandomNumGen(seed)
+		
+		for factory in self.factories:
+			#num = dice.randint(0, factory.averageNumber) + dice.randint(0, factory.averageNumber)
+			num = int((dice.random() + dice.random()) * factory.averageNumber)
+			for iterator in range(num):
+				x = dice.random() * tileSize
+				y = dice.random() * tileSize
+				if terrain.getHeight(x+xOff, y+yOff) > terrain.waterHeight:
+					object = factory.factoryFunction(*factory.constructorParams)
+					#logging.info(object)
+					#logging.info(factory.factoryFunction)
+					self.addToTile(tile, object, x, y)
+		tile.statics.flattenStrong()
+		
+	def addToTile(self, tile, object, x, y):
+		#logging.info("addToTile")
+		test = tile.statics
+		object.reparentTo(tile.statics)
+		#z = tile.terrain.getElevation(x + tile.xOffset, y + tile.yOffset)
+		#print z
+		z = tile.terrain.getHeight(x + tile.xOffset, y + tile.yOffset)
+		#print z
+		object.setPos(render, x + tile.xOffset, y + tile.yOffset, z)
+		#object.setScale(100.0)
