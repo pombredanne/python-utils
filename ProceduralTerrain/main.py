@@ -173,3 +173,135 @@ class World(DirectObject):
 		cf = CommonFilters(base.win, base.cam)
 		# bloomSize
 		cf.setBloom(size='small', desat=0.7, intensity=1.5, mintrigger=0.6, maxtrigger=0.95)
+		# hdrtype:
+		render.setAttrib(LightRampAttrib.makeHdr1())
+		# perpixel:
+		render.setShaderAuto()
+		#base.bufferViewer.toggleEnable()
+		
+	def _loadSky(self):
+		self.sky = Sky(None)
+		self.sky.start()
+		
+	def _loadPlayer(self):
+		self.ralph = Player(self.terrain.getElevation, 0, 0)
+		self.focus = self.ralph
+		self.terrain.setFocus(self.focus)
+		
+		self.camera = FollowCamera(self.ralph, self.terrain)
+		
+		self.mouseInvertY = False
+		self.accept("escape", sys.exit)
+		self.accept("w", self.ralph.setControl, ["forward", 1])
+		self.accept("a", self.ralph.setControl, ["left", 1])
+		self.accept("s", self.ralph.setControl, ["back", 1])
+		self.accept("d", self.ralph.setControl, ["right", 1])
+		self.accept("shift", self.ralph.setControl, ["turbo", 1])
+		self.accept("f11", screenShot)
+		self.accept("1", self.sky.setTime, [300.0])
+		self.accept("2", self.sky.setTime, [600.0])
+		self.accept("3", self.sky.setTime, [900.0])
+		self.accept("4", self.sky.setTime, [1200.0])
+		self.accept("5", self.sky.setTime, [1500.0])
+		self.accept("6", self.sky.setTime, [1800.0])
+		self.accept("7", self.sky.setTime, [2100.0])
+		self.accept("8", self.sky.setTime, [0.0])
+		self.accept("n", self.sky.toggleNightSkip)
+		self.accept("p", self.sky.pause)
+		self.accept("r", self.terrain.initializeHeightMap)
+		self.accept("l", self.terrain.toggleWireFrame)
+		self.accept("t", self.physics.test)
+		self.accept("e", self.toggleEditor)
+		self.accept("w-up", self.ralph.setControl, ["forward", 0])
+		self.accept("a-up", self.ralph.setControl, ["left", 0])
+		self.accept("s-up", self.ralph.setControl, ["back", 0])
+		self.accept("d-up", self.ralph.setControl, ["right", 0])
+		self.accept("shift-up", self.ralph.setControl, ["turbo", 0])
+		self.accept("numlock", self.ralph.setControl, ["forward", 1])
+		self.accept("wheel_up", self.camera.zoom, [1])
+		self.accept("wheel_down", self.camera.zoom, [0])
+		
+		# mouse controls
+		self.accept("tab", self.toggleMenu)
+		self.mouseLook = True
+		
+		self.critter1 = Ai(self.terrain.getElevation, 2, 2)
+		self.critter1.setSeek(self.ralph)
+		
+		self.critter2 = Ai(self.terrain.getElevation, 0, 0)
+		self.critter2.maxSpeed = 5.0
+		self.critter2.setWander(60)
+		
+	def _loadPhysics(self):
+		self.physics = TerrainPhysics()
+		
+	def _loadPointLight(self):
+		self.lightpivot = render.attachNewNode("lightpivot")
+		self.lightpivot.hprinterval(10, Point3(360, 0, 0)).loop()
+		plight = PointLight('plight')
+		plight.setColor(Vec4(1,1,1,1))
+		plight.setAttenuation(Vec3(0.7, 0.05, 0))
+		plnp = self.lightpivot.attachNewNode(plight)
+		plnp.setPos(10, 0, 0)
+		render.setLight(plnp)
+		
+		# create a sphere to denote the light
+		sphere = loader.loadModel("models/sphere")
+		sphere.reparentTo(plnp)
+		render.setShaderInput("plight0", plnp)
+		
+	def toggleMenu(self):
+		ml = toggleMouseLook()
+		try: self.shaderControl
+		except: logging.info("No shader control found.")
+		else: self.shaderControl.setHidden(ml)
+		
+	def toggleEditor(self):
+		ml = toggleMouseLook()
+		self.editor.toggle(not ml)
+		
+	def move(self, task):
+		#self.lightpivot.setPos(self.focus.getPos() + Vec3(0,0,4))
+		if not getMouseLook():
+			return Task.cont
+			
+		elapsed = task.time - self.prevtime
+		
+		# use the mouse to look around and set characters direction
+		md = base.win.getPointer(0)
+		deltaX = md.getX() - 200
+		deltaY = md.getY() - 200
+		if self.mouseInvertY: 
+			deltaY *= -1
+			
+		if base.win.movePointer(0, 200, 200):
+			self.camera.update(deltaX, deltaY)
+			
+		self.ralph.update(elapsed)
+		self.critter1.update(elapsed)
+		self.critter2.update(elapsed)
+		
+		self.terrain.setShaderInput("camPos", self.camera.camNode.getPos(render))
+		self.terrain.setShaderInput("fogColor", self.sky.fog.getColor())
+		
+		# character location output
+		self.loc_text.setText('[LOC]: %03.1f, %03.1f,%03.1f ' % \
+								(self.ralph.getX(), self.ralph.getY(), self.ralph.getZ()))
+		# camera heading + pitch output
+		self.hpr_text.setText('[HPR]: %03.1f, %03.1f,%03.1f ' % \
+								(self.camera.fulcrum.getH(), self.camera.camNode.getP(), self.camera.camNode.getR()))
+								
+		self.time_text.setText('[Time]: %02i:%02i' % (self.sky.time / 100, self.sky.time % 100 * 60 / 100))
+		
+		# Store the task time and continue
+		self.prevtime = task.time
+		return Task.cont
+		
+def launchTerrainDemo():
+	logging.info('instancing world...')
+	w = World()
+	logging.info('calling run()...')
+	run()
+
+#if __name__ == "__main__":
+launchTerrainDemo()	
