@@ -67,3 +67,19 @@ class World(DirectObject):
 		#self._loadFog()
 		
 		self.bug_text.setText("loading player...")
+		#showFrame()
+		yield Task.cont
+		yield Task.cont
+		self._loadPlayer()
+		
+		self.bug_text.setText("loading water...")
+		#showFrame()
+		yield Task.cont
+		yield Task.cont
+		self._loadWater()
+		
+		self.bug_text.setText("loading filters...")
+		#showFrame()
+		yield Task.cont
+		yield Task.cont
+		self._loadFilters()
