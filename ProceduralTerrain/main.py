@@ -83,3 +83,93 @@ class World(DirectObject):
 		yield Task.cont
 		yield Task.cont
 		self._loadFilters()
+		
+		self.bug_text.setText("loading gui controls...")
+		#showFrame()
+		yield Task.cont
+		yield Task.cont
+		self._loadGui()
+		
+		self.bug_text.setText("loading miscellanous...")
+		#showFrame()
+		yield Task.cont
+		yield Task.cont
+		
+		self.physics.setup(self.terrain, self.ralph)
+		
+		taskMgr.add(self.move, "moveTask")
+		
+		# Game state variables
+		self.prevtime = 0
+		self.isMoving = False
+		self.firstmove = 1
+		
+		disableMouse()
+		
+		self.bug_text.setText("")
+		#showFrame()
+		yield Task.cont
+		yield Task.cont
+		self.splash.destroy()
+		self.splash = None
+		
+		yield Task.done
+		
+	def _loadGui(self):
+		try:
+			self.terrain.texturer.shader
+		except:
+			logging.info("Terrain texturer has no shader to control.")
+		else:
+			self.shaderControl = TerrainShaderControl(-0.4, -0.1, self.terrain)
+			self.shaderControl.hide()
+			
+	def _loadDisplay(self):
+		base.setFrameRateMeter(True)
+		#base.win.setClearColor(Vec4(0,0,0,1))
+		# Post the instructions
+		self.title = addTitle("Animate Dream Terrain Engine")
+		self.inst1 = addText(0.95, "[ESC]: Quit")
+		self.inst2 = addText(0.90, "[Mouse Wheel]: Camera Zoom")
+		self.inst3 = addText(0.85, "[Y]: Y-axis Mouse Invert")
+		self.inst4 = addText(0.80, "[W]: Run Character Forward")
+		self.inst5 = addText(0.75, "[A]: Run Character Left")
+		self.inst6 = addText(0.70, "[S]: Run Character Backward")
+		self.inst7 = addText(0.65, "[D]: Run Character Right")
+		self.inst8 = addText(0.60, "[Shift]: Turbo Mode")
+		self.inst9 = addText(0.55, "[R]: Regenerate Terrain")
+		self.inst10 = addText(0.50, "[Tab]: Open Shader Controls")
+		self.inst11 = addText(0.45, "[1-8]: Set time to # * 3")
+		self.inst12 = addText(0.40, "[N]: Toggle Night Skipping")
+		self.inst13 = addText(0.35, "[P]: Pause day night cycle")
+		self.inst14 = addText(0.30, "[F11]: Screen Shot")
+		self.inst15 = addText(0.25, "[T]: Special Test")
+		
+		self.loc_text = addText(0.15, "[POS]: ", True)
+		self.hpr_text = addText(0.10, "[HPR]: ", True)
+		self.time_text = addText(0.05, "[Time]: ", True)
+		
+	def _loadTerrain(self):
+		populator = TerrainPopulator()
+		populator.addObject(makeTree, {}, 5)
+		
+		if SAVED_HEIGHT_MAPS:
+			seed = 666
+		else:
+			seed = 0
+		self.terrain = Terrain('Terrain', base.cam, MAX_VIEW_RANGE, populator, feedBackString = self.bug_text, id=seed)
+		self.terrain.reparentTo(render)
+		self.editor = MapEditor(self.terrain)
+		
+	def _loadWater(self):
+		self._water_level = self.terrain.maxHeight * self.terrain.waterHeight
+		size = self.terrain.maxViewRange * 1.5
+		self.water = WaterNode(self, -size, -size, size, size, self._water_level)
+		
+	def _loadFilters(self):
+		self.terrain.setShaderInput('waterlevel', self._water_level)
+		
+		# load default shaders
+		cf = CommonFilters(base.win, base.cam)
+		# bloomSize
+		cf.setBloom(size='small', desat=0.7, intensity=1.5, mintrigger=0.6, maxtrigger=0.95)
