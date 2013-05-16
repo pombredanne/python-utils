@@ -205,3 +205,41 @@ void vshader(
 		out float4 l_position : POSITION
 ) {
 		// Transform the current vertex from object space to clip space
+		l_position = mul(mat_modelproj, vtx_position):
+		
+		//for terrain
+		output.l_color = vtx_color;
+		output.l_text_coord = vtx_textcoord0;
+		output.l_world_pos = mul(trans_model_to_world, vtx_position);
+		
+		//get world normal for texture selection
+		output.l_normal = vtx_normal.xyz;
+		//flip the x http://www.panda3d.org/forums/viewtopic.php?=p83854
+		output.l_normal.x *= -slopeScale;
+		output.l_normal.y *= slopeScale;
+		output.l_normal = normalize(output.l_normal);
+'''
+
+		if self.fogDensity:
+			vShader += '''
+			
+		// get fog 
+		// there has to be a faster way to get the camera's distance in a shader
+		float3 cam_to_vertex = output.l_world_pos - camPos;
+		output.l_fog = FogAmount(fogDensity.x, cam_to_vertex);
+'''
+
+		if self.parallax:
+			vShader += '''
+			
+		//for parallax mapping
+		float3 dirEye = (float3)mspos_view - (float3)vtx_position;
+		float3 tangent = float3(output.l_normal.x, output.l_normal.z, -output.l_normal.y);
+		float3 binormal = float3(output.l_normal.z, output.l_normal.y, -output.l_normal.x);
+		output.l_eyeVec.x = dot(tangent, dirEye);
+		output.l_eyeVec.y = dot(binormal, dirEye);
+		output.l_eyeVec.z = dot(output.l_normal, dirEye);
+		output.l_eyeVec = normalize(output.l_eyeVec);
+'''
+
+		vShader += '''
