@@ -145,3 +145,63 @@ float3 absoluteValue(float3 input)
 	return float3(abs(input.x), abs(input.y), abs(input.z));
 }
 '''
+
+
+		if self.avoidConditionals == 0:
+			functions += '''
+float calculateWeight( float value, float minimum, float maximum )
+{
+	if (value < minimum)
+		return 0.0;
+	if (value > maximum)
+		return 0.0;
+		
+	float weight = min(maximum - value, value - minimum);
+	
+	return weight;
+}
+'''
+
+		else: 
+			functions += '''
+float calculateWeight( float value, float minimum, float maximum )
+{
+	value = clamp(value, minimum, maximum);
+	float weight = min(maximum - value, value - minimum);
+	
+	return weight;
+}
+'''
+
+		functions += '''
+float calculateFinalWeight( float height, float slope, float4 limits )
+{
+	return calculateWeight(height, limits.x, limits.y)
+		* calculateWeight(slope, limits.z, limits.a);
+}
+
+float3 reflectVector( float3 input, float3 normal)
+{
+	return ( -2 * dot(input,normal) * normal + input );
+}
+'''
+
+		return functions
+		
+	def getVertexShader(self):
+		vShader = '''
+void vshader(
+		in float2 vtx_texcoord0 : TEXCOORD0,
+		in float4 vtx_position : POSITION,
+		in float4 vtx_normal : NORMAL, 
+		in float4 vtx_color : COLOR,
+		uniform float4 mspos_view,
+		uniform float fogDensity: FOGDENSITY,
+		uniform float3 camPos : CAMPOS,
+		uniform float4x4 trans_model_to_world,
+		uniform float4x4 mat_modelproj,
+		
+		out vfconn output,
+		out float4 l_position : POSITION
+) {
+		// Transform the current vertex from object space to clip space
