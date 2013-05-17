@@ -354,3 +354,79 @@ void fshader(
 		float dlight_angle = saturate(dot(input.l_normal.xyz, lvec.xyz));
 		dlight_angle *= sqrt(dlight_angle);
 '''
+		if self.glare:
+			fshader += '''
+		//glare direct sun... should glare on reflection over normal instead.
+		dlight_angle -= 0.002 * dlight_angle / (dlight_angle-1.005);
+'''
+		fshader += '''
+		lcolor *= dlight_angle;
+		
+		tot_diffuse += lcolor;
+		// Begin view-space light summation
+		float4 result = float4(0,0,0,0.5);
+		result += tot_ambient * attr_color;
+		result += tot_diffuse * attr_color;
+		result *= attr_colorscale;
+		if (ambientOcclusion)
+			result *= input.l_color * input.l_color * 1.75;
+		// End view-space light calculations
+		
+		//////////DEBUGGING
+		// Debug view slopes
+		//result.rgb = slope * float3(1.0,1.0,1.0) * 2.0;
+		// Debug view surface normals
+		//result.rgb = absoluteValue(input.l_normal) * 1.3;
+		// Debug view eye normals
+		//result.rgb = input.l_eye_normal.xyz * 2.0;
+		// Debug view Light only
+		//result = tot_diffuse + tot_ambient;
+		// Debug view DLight only
+		//result = tot_diffuse;
+		// Debug view terrain as solid color before fog
+		//result = float4(1.0,0,0,0.5);
+		// Debug view l_eyeVec
+		//result.rgb = input.l_eyeVec + float3 (1.0, 1.0, 1.0);
+		//////////
+		
+		//hdr0  brightness drop 1 -> 3/4
+		//result.rgb = (result*result*result + result*result + result) / (result*result*result + result*result + result + 1);
+		//hdr1  brightness drop 1 -> 2/3
+		//result.rgb = (result*result + result) / (result*result + result + 1.0);
+		//hdr2  brightness drop 1 -> 1/2
+		//result.rgb = (result) / (result + 1);
+'''
+		if self.fogDensity:
+			fshader += '''
+		result = lerp( fogColor, result, input.l_fog);
+'''
+		fshader += '''
+		o_color = result * 1.000001;
+}
+'''
+		return fshader
+		
+	def initializeShaderInput(self):
+		return
+		
+	def createShader(self):
+		logging.info("loading terrain settings into shader input...")
+		self.initializeShaderInput()
+		
+		logging.info("assembling shader cg code")
+		shader = self.getHeader()
+		shader += self.getFunctions()
+		shader += self.getVertexFragmentConnector()
+		shader += self.getVertexShader()
+		shader += self.getFragmentShaderTop()
+		shader += self.getFShaderTerrainParameters()
+		shader += self.getDetailTextureCode()
+		shader += self.getTerrainPrepCode()
+		shader += self.getTerrainTextureCode()
+		shader += self.getFragmentShaderEnd()
+		return shader
+		
+	def saveShader(self, name='shaders/terrain.sha'):
+		string = self.createShader()
+		f = open(name, 'w')
+		f.write(string)
