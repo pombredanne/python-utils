@@ -267,4 +267,125 @@ class Terrain(NodePath):
 		#self.texturer = DetailTexturer(self)
 		#self.texturer.apply(self)
 		#self.setShaderInput("zMultiplier",)
-		loggin.info("rendering properties initialized...")
+		logging.info("rendering properties initialized...")
+		
+	def _setupSimpleTasks(self):
+		"""This sets up tasks to maintain the terrain as the focus moves."""
+		
+		logging.info("initializing terrain update task...")
+		
+		##Add tasks to keep updating the terrain
+		#taskMgr.add(self.updateTilesTask, "updateTiles", sort=9, priority=0)
+		taskMgr.doMethodLater(5, self.update, "update", sort=9, priority=0)
+		self.updateStep = 1
+		
+	def reduceSceneGraph(self, radius):
+		gr = self.graphReducer
+		gr.applyAttribs(self.node())
+		gr.setCombineRadius(radius)
+		gr.flatten(self.node(), SceneGraphReducer.CSRecurse)
+		gr.makeCompatibleState(self.node())
+		gr.collectVertexData(self.node())
+		gr.unify(self.node(), False)
+		
+	def update(self, task):
+		"""This task updates terrain as needed."""
+		
+		if self.updateStep == 1:
+			self.makeNewTile()
+			if THREAD_LOAD_TERRAIN:
+				self.grabBuiltTile()
+			
+			self.removeOldTiles()
+			self.updateStep += 1
+			return Task.cont
+			
+		#self.updateTiles()
+		self.tileLodUpdate()
+		#self.buildDetailLevels()
+		
+		self.updateStep = 1
+		return Task.cont
+		
+	def updateLight(self):
+		"""This task moves point and directional lights.
+		
+		For larger projects this should be externalized.
+		
+		"""
+		
+		self.pointLight = Vec3(0, 5, 0)#self.focus.getPos() + Vec3(0,5,0)
+		self.setShaderInput("LightPosition", self.pointLight)
+		
+	def updateTiles(self):
+		"""This task updates each tile, which updates the LOD.
+		
+		GeoMipMap updates are slow however and may cause unacceptable lag.
+		"""
+		#logging.info(self.focus.getPos())
+		for pos, tile in self.tiles.items():
+			tile.update()
+			#logging.info(str(tile.getFocalPoint().getPos()))
+			#if tile.update():
+				#logging.info("update success")
+				#yield Task.cont
+				
+	def tileLodUpdate(self):
+		"""Updates tiles to LOD appropriate for their distance.
+
+        setMinDetailLevel() doesn't flag a geomipterrain as dirty, so update
+        will not alter detail level. It would have to be regenerated.
+        Instead we will use a special LodTerrainTile.
+        """
+		
+		if not self.bruteForce:
+			self.updateTiles()
+			return
+			
+		focusx = self.focus.getX() / self.horizontalScale
+		focusy = self.focus.getY() / self.horizontalScale
+		halfTile = self.tileSize * 0.5
+		
+		# switch to high, mid, and low LOD's at these distances
+		# having a gap between the zones avoids switching back and forth too
+		# if the focus is moving erratically
+		highOuter = self.minTileDistance * 0.02 + self.tileSize
+		highOuter *= highOuter
+		midInner = self.minTileDistance * 0.02 + self.tileSize + halfTile
+		midInner *= midInner
+		midOuter = self.minTileDistance * 0.2 + self.tileSize
+		midOuter *= midOuter
+		lowInner = self.minTileDistance * 0.2 + self.tileSize + halfTile
+		lowInner *= lowInner
+		lowOuter = self.minTileDistance * 0.5 + self.tileSize
+		lowOuter *= lowOuter
+		horizonInner = self.minTileDistance * 0.5 + self.tileSize + halfTile
+		horizonInner *= horizonInner
+		
+		for pos, tile in self.tiles.items():
+			deltaX = focusx - (pos[0] + halfTile)
+			deltaY = focusy - (pos[1] + halfTile)
+			distance = deltaX * deltaX + deltaY * deltaY
+			if distance < highOuter:
+				tile.setDetail(0)
+			elif distance < midOuter:
+				if distance > midInner or tile.getDetail() > 1:
+					tile.setDetail(1)
+			elif distance < lowOuter:
+				if distance > lowInner or tile.getDetail() > 2:
+					tile.setDetail(2)
+			elif distance > horizonInner:
+				tile.setDetail(3)
+				
+	def buildDetailLevels(self):
+		"""Unused."""
+		
+		n = len(self.buildQueue) / 5.0
+		if n > 0 and n < 1:
+			n = 1
+		else:
+			n = int(n)
+			
+		for i in range(n):
+			request = self.buildQueue.popleft()
+			request[0].buildAndSet(request[1])
