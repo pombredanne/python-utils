@@ -389,3 +389,264 @@ class Terrain(NodePath):
 		for i in range(n):
 			request = self.buildQueue.popleft()
 			request[0].buildAndSet(request[1])
+			
+	def oldPreload(self, task, xpos=0, ypos=0):
+		"""Loads all tiles in range immediately.
+		
+		This can suspend the program for a long time and is best used when
+        first loading a level. It simply iterates through a square region
+        building any tile that is reasonably within the max distance. It does not
+        prioritize tiles closest to the focus.
+
+        """
+		
+		logging.info("preloading terrain tiles...")
+		self.buildQueue = deque()
+		
+		# x and y start are rounded to the nearest multiple of tile size
+		xstart = (int(xpos / self.horizontalScale) / self.tileSize) * self.tileSize
+		ystart = (int(ypos / self.horizontalScale) / self.tileSize) * self.tileSize
+		# check radius is rounded up to the nearest tile size from maxTileDistance
+		# not every tile in checkRadius will be made
+		checkRadius = (int(self.maxTileDistance) / self.tileSize + 1) * self.tileSize
+		halfTile = self.tileSize * 0.5
+		# build distance for the preloader will be halfway in between the normal 
+		# load distance and the unloading distance
+		buildDistanceSquared = (self.minTileDistance + self.maxTileDistance) / 2
+		buildDistanceSquared = buildDistanceSquared * buildDistanceSquared
+		
+		for x in range (xstart - checkRadius, xstart + checkRadius, self.tileSize):
+			for y in range (ystart - checkRadius, ystart + checkRadius, self.tileSize):
+				if not (x, y) in self.tiles:
+					deltaX = xpos - (x + halfTile)
+					deltaY = ypos - (y + halfTile)
+					distanceSquared = deltaX * deltaX + deltaY * deltaY
+					
+					if distanceSquared < buildDistanceSquared:
+						self.buildQueue.append((x, y))
+						
+		total = len(self.buildQueue)
+		while len(self.buildQueue):
+			if self.feedBackString:
+				done = total - len(self.buildQueue)
+				feedback = "Loading Terrain " + str(done) + "/" + str(total)
+				logging.info(feedback)
+				self.feedBackString.setText(feedback)
+			tile = self.buildQueue.popleft()
+			self._generateTile(tile)
+			yield Task.cont
+			
+		self._setupSimpleTasks()
+		yield Task.done
+		
+	def preload(self, xpos=1, ypos=1):
+		"""
+		
+		"""
+		
+		logging.info("preloading terrain tiles...")
+		
+		# x and y start are rounded to the nearest multiple of tile size
+		xstart = (int(xpos / self.horizontalScale) / self.tileSize) * self.tileSize
+		ystart = (int(ypos / self.horizontalScale) / self.tileSize) * self.tileSize
+		# check radius is rounded up to the nearest tile size from maxTileDistance
+		# not every tile in checkRadius will be made
+		checkRadius = (int(self.maxTileDistance) / self.tileSize + 1) * self.tileSize
+		halfTile = self.tileSize * 0.5
+		# build distance for the preloader will be halfway in between the normal
+		# load distance and the unloading distance
+		buildDistanceSquared = (self.minTileDistance + self.maxTileDistance) / 2
+		buildDistanceSquared = buildDistanceSquared * buildDistanceSquared
+		
+		for x in range (xstart - checkRadius, xstart + checkRadius, self.tileSize):
+			for y in range (ystart - checkRadius, ystart + checkRadius, self.tileSize):
+				if not (x, y) in self.tiles:
+					deltaX = xpos - (x + halfTile)
+					deltaY = ypos - (y + halfTile)
+					distanceSquared = deltaX * deltaX + deltaY * deltaY
+					
+					if distanceSquared < buildDistanceSquared:
+						self.tileBuilder.preload((x, y))
+		self.preloadTotal = self.tileBuilder.queue.qsize()
+		taskMgr.add(self.preloadWait, "preloadWaitTask")
+		
+	def preloadWait(self, task):
+		#loggin.info( "preloadWait()")
+		if self.feedBackString:
+			done = self.preloadTotal - self.tileBuilder.queue.qsize()
+			feedback = "Loading Terrain " + str(done) + "/" + str(self.preloadTotal)
+			logging.info(feedback)
+			self.feedBackString.setText(feedback)
+			
+		#self.grabBuiltTile()
+		if self.tileBuilder.queue.qsize() > 0:
+			#logging.info( self.tileBuilder.queue.qsize())
+			return Task.cont
+			
+		self._setupSimpleTasks()
+		return Task.done
+		
+	#@pstat
+	def makeNewTile(self):
+		"""Generate the closest terrain tile needed."""
+		
+		# tiles are placed under the terrain node path which may be scaled
+		x = self.focus.getX(self) / self.horizontalScale
+		y = self.focus.getY(self) / self.horizontalScale
+		# start position is the focus position rounded to the multiple of tile size
+		xstart = (int(x) / self.tileSize) * self.tileSize
+		ystart = (int(y) / self.tileSize) * self.tileSize
+		# radius is rounded up from minTileDistance to nearest multiple of tile size
+		# not every tile within checkRadius will be made
+		checkRadius = (int(self.minTileDistance) / self.tileSize + 1) * self.tileSize
+		halfTile = self.tileSize * 0.49
+		tiles = self.tiles
+		
+		#logging.info( xstart, ystart, checkRadius)
+		vec = 0
+		minFoundDistance = 9999999999.0
+		minDistanceSq = self.minTileDistance * self.minTileDistance
+		
+		for checkX in range (xstart - checkRadius, xstart + checkRadius, self.tileSize):
+			for checkY in range (ystart - checkRadius, ystart + checkRadius, self.tileSize):
+				if not (checkX, checkY) in tiles:
+					deltaX = x - (checkX + halfTile)
+					deltaY = y - (checkY + halfTile)
+					distanceSq = deltaX * deltaX + deltaY * deltaY
+					
+					if distanceSq < minDistanceSq and distanceSq < minFoundDistance:
+						minFoundDistance = distanceSq
+						vec = (checkX, checkY)
+		if not vec == 0:
+			#logging.info( distance," < ", self.minTileDistance," and ", distance," < ", minDistance)
+			#self.generateTile(vec.getX(), vec.getY())
+			if THREAD_LOAD_TERRAIN:
+				self.dispatchTile(vec)
+			else:
+				self._generateTile(vec)
+				
+			
+	#@pstat
+	def dispatchTile(self, pos):
+		"""Creates a terrain tile at the input coordinates."""
+		
+		if pos in self.storage:
+			tile = self.storage[pos]
+			self.tiles[pos] = tile
+			tile.getRoot().reparentTo(self)
+			del self.storage[pos]
+			logging.info("tile recovered from storage at " + str(pos))
+			return
+			
+		self.tileBuilder.build(pos)
+		self.tiles[pos] = 1
+		
+	#@pstat
+	def _generateTile(self, pos):
+		"""Creates a terrain tile at the input coordinates."""
+		
+		if pos in self.storage:
+			tile = self.storage[pos]
+			self.tiles[pos] = tile
+			tile.getRoot().reparentTo(self)
+			del self.storage[pos]
+			logging.info("tile recovered from storage at " + str(pos))
+			#self.flattenMedium()
+			return
+			
+		if SAVED_TEXTURE_MAPS:
+			tile = TextureMappedTerrainTile(self, pos[0], pos[1])
+		elif self.bruteForce:
+			tile = LodTerrainTile(self, pos[0], pos[1])
+		else:
+			tile = TerrainTile(self, pos[0], pos[1])
+		tile.make()
+		tile.getRoot().reparentTo(self)
+		self.tiles[pos] = tile
+		logging.info("tile generated at " + str(pos))
+		#self.flattenMedium()
+		
+		return tile
+		
+	def grabBuiltTile(self):
+		#logging.info( "grabBuiltTile()")
+		tile = self.tileBuilder.grab()
+		#logging.info( "tile = "+ str(tile))
+		if tile:
+			pos = (tile.xOffset, tile.yOffset)
+			tile.getRoot().reparentTo(self)
+			self.tiles[pos] = tile
+			logging.info("tile generated at " + str(pos))
+			return tile
+		return None
+		
+	#@pstat
+	def removeOldTiles(self):
+		"""Remove distant tiles to free system resources."""
+		
+		x = self.focus.getX(self) / self.horizontalScale
+		y = self.focus.getY(self) / self.horizontalScale
+		center = self.tileSize * 0.5
+		maxDistanceSquared = self.maxTileDistance * self.maxTileDistance
+		for pos, tile in self.tiles.items():
+			deltaX = x - (pos[0] + center)
+			deltaY = y - (pos[1] + center)
+			distance = deltaX * deltaX + deltaY * deltaY
+			if distance > maxDistanceSquared:
+				#logging.info( distance+ " > "+ self.maxTileDistance * self.maxTileDistance)
+				self.storeTile(pos)
+			
+	def storeTile(self, pos):
+		tile = self.tiles[pos]
+		if tile != 1:
+			tile.getRoot().detachNode()
+			self.storage[pos] = tile
+		del self.tiles[pos]
+		logging.info("Tile removed from " + str(pos))
+		
+	def deleteTile(self, pos):
+		"""Removes a specific tile from the Terrain."""
+		
+		self.tiles[pos].getRoot().detachNode()
+		del self.tiles[pos]
+		logging.info("Tile deleted from " + str(pos))
+		
+	def getElevation(self, x, y):
+		"""Returns the height of the terrain at the input world coordinates."""
+		
+		x /= self.horizontalScale
+		y /= self.horizontalScale
+		if SAVED_HEIGHT_MAPS:
+			tilex = (int(x) / self.tileSize) * self.tileSize
+			tiley = (int(y) / self.tileSize) * self.tileSize
+			x -= tilex
+			y -= tiley
+			if (tilex, tiley) in self.tiles:
+				return self.tiles[tilex, tiley].getElevation(x, y) * self.getSz()
+			if (tilex, tiley) in self.storage:
+				return self.storage[tilex, tiley].getElevation(x, y) * self.getSz()
+		return self.getHeight(x, y) * self.getSz()
+		
+	def setWireFrame(self, state):
+		self.wireFrame = state
+		if state:
+			self.setRenderModeWireframe()
+		else:
+			self.setRenderModeFilled()
+		#for pos, tile in self.tiles.items():
+		#	tile.setWireFrame(state)
+		
+	def toggleWireFrame(self):
+		self.setWireFrame(not self.wireFrame)
+		
+	def test(self):
+		self.texturer.test()
+		
+	def setShaderFloatInput(self, name, input):
+		logging.info("set shader input " + name + " to " + str(input))
+		self.setShaderInput(name, PTAFloat([input]))
+		
+	def setFocus(self, nodePath):
+		self.focus = nodePath
+		for pos, tile in self.tiles.items():
+			tile.setFocalPoint(self.focus)
