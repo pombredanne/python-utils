@@ -243,3 +243,114 @@ void vshader(
 '''
 
 		vShader += '''
+}
+'''
+		return vShader
+		
+	def getFragmentShaderTop(self):
+		fshader = '''
+void fshader(
+		in vfconn input, 
+		uniform float4 alight_alight0,
+		//uniform float4x4 dlight_dlight0_rel_view,
+		uniform float4x4 dlight_dlight0_rel_world,
+		out float4 o_color : COLOR0,
+		uniform float4 attr_color,
+		uniform float4 attr_colorscale,
+		
+		//for terrain shader
+		in uniform sampler2D normalMap,
+		in uniform sampler2D displacementMap,
+		in uniform sampler2D detailTex,
+		in uniform float normalMapStrength,
+		in uniform float parallaxStrength,
+		in uniform float detailSmallScale,
+		in uniform float detailBigScale,
+		in uniform float detailHugeScale,
+		in uniform float ambientOcclusion,
+		in uniform float debugDisableDiffuse,
+		in uniform float brightnessAdjust,
+		'''
+		if self.fogDensity:
+			fshader += '''
+		in uniform float4 fogColor : FOGCOLOR,
+'''
+		return fshader
+		
+	def getDetailTextureCode(self):
+		fshader = '''
+		
+		// get detail coordinates
+		float2 detailCoordSmall = input.l_tex_coord * detailSmallScale;
+		float2 detailCoordBig = input.l_tex_coord * detailBigScale;
+		float2 detailCoordHuge = input.l_tex_coord * detailHugeScale;
+		float3 terrainNormal = input.l_normal;
+'''
+		if self.parallax:
+			fshader += '''
+		//parallax mapping
+		float depth = (tex2D(displacementMap, detailCoordSmall).w * tex2D(displacementMap, detailCoordBig).w * tex2D(displacementMap, detailCoordHuge).w) - 0.5;
+		float3 offset = input.l_eyeVec * depth * parallaxStrength;
+
+        //depth = depth + (tex2D(displacementMap, detailCoordSmall + offset).w * tex2D(displacementMap, detailCoordBig + offset).w * tex2D(displacementMap, detailCoordHuge + offset).w);
+        //offset = input.l_eyeVec * depth * parallaxStrength;
+
+        //depth = depth + (tex2D(displacementMap, detailCoordSmall + offset).w * tex2D(displacementMap, detailCoordBig + offset).w * tex2D(displacementMap, detailCoordHuge + offset).w);
+        //offset = input.l_eyeVec * depth * parallaxStrength;
+		
+		detailCoordSmall += offset;
+		detailCoordBig += offset;
+		detailCoordHuge += offset;
+		input.l_tex_coord += offset;
+'''
+
+		fshader += '''
+		float4 detailColor = (tex2D(detailTex, detailCoordSmall) * tex2D(detailTex, detailCoordBig) * tex2D(detailTex, detailCoordHuge));
+'''
+		if self.normalMapping:
+			fshader += '''
+		// normal mapping
+		float3 normalModifier = tex2D(normalMap, detailCoordSmall) + tex2D(normalMap, detailCoordBig) + tex2D(normalMap, detailCoordHuge)/2.0 - 1.25;
+		input.l_normal *= normalModifier.z/normalMapStrength;
+		input.l_normal.x += normalModifier.x;
+		input.l_normal.y += normalModifier.y;
+		input.l_normal = normalize(input.l_normal);
+'''
+
+		return fshader
+		
+	def getFragmentShaderEnd(self):
+		
+		fshader = ''
+		if self.avoidConditionals == 0:
+			fshader += '''
+		if (debugDisableDiffuse)
+			attr_color = float4(1,1,1,1);
+'''
+		else:
+			fshader += '''
+		attr_color = max(attr_color, float4(debugDisabledDiffuse,debugDisableDiffuse,debugDisableDiffuse,debugDisableDiffuse);
+'''
+		if self.detailTexture:
+			fshader += '''
+			
+		// Add detail texture
+		attr_color *= brightnessAdjust * detailColor;
+'''
+		fshader += '''
+		// Begin view-space light calculations
+		float ldist, lattenv, langle;
+		float4 lcolor,lspec,lvec,lpoint,latten,ldir,leye,lhalf;
+		float4 tot_ambient = float4(0,0,0,0);
+		float4 tot_diffuse = float4(0,0,0,0);
+		// Ambient Light 0
+		lcolor = alight_alight0;
+		tot_ambient += color;
+		// Directional Light 0
+		lcolor = dlight_dlight0_rel_world[0];
+		lspec  = dlight_dlight0_rel_world[1];
+		lvec   = dlight_dlight0_rel_world[2];
+		//lvec.xyz = normalize(lvec.xyz);
+		float dlight_angle = saturate(dot(input.l_normal.xyz, lvec.xyz));
+		dlight_angle *= sqrt(dlight_angle);
+'''
