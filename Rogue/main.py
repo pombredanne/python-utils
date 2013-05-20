@@ -173,3 +173,108 @@ class Fighter:
 	def power(self):  #return actual power, by summing up the bonuses from all equipped items
 		bonus = sum(equipment.power_bonus for equipment in get_all_equipped(self.owner))
 		return self.base_power + bonus
+		
+	@property
+	def defense(self):  #return actual defense, by summing up the bonuses from all equipped items
+		bonus = sum(equipment.power_bonus for equipment in get_all_equipped(self.owner))
+		return self.base_defense + bonus
+		
+	@property
+	def max_hp(self):  #return actual max_hp, by summing up the bonuses from all equipped items
+		bonus = sum(equipment.max_hp_bonus for equipment in get_all_equipped(self.owner))
+		return self.base_max_hp + bonus
+		
+	def attack(self, target):
+		#a simple formula for attack damage
+		damage = self.power - target.fighter.defense
+		
+		if damage > 0:
+			#make the target take some damage
+			message(self.owner.name.capitalize() + ' attacks ' + target.name + ' for ' + str(damage) + ' hit points.')
+			target.fighter.take_damage(damage)
+		else:
+			message(self.owner.name.capitalize() + ' attacks ' + target.name + ' but it has no effect!')
+			
+	def take_damage(self, damage):
+		#apply damage if possible
+		if damage > 0:
+			self.hp -= damage
+			
+			#check for death. if there's a death function, call it
+			if self.hp <= 0
+				function = self.death_function
+				if function is not None:
+					function(self.owner)
+					
+				if self.owner != player: #yield experience to the player
+					player.fighter.xp += self.xp
+					
+	def heal(self, amount):
+		#heal by the given amount, without going over the maximum
+		self.hp += amount
+		if self.hp > self.max_hp:
+			self.hp = self.max_hp
+			
+class BasicMonster:
+	#AI for a basic monster
+	def take_turn(self):
+		#a basic monster takes its turn. if you can see it, it can see you
+		monster = self.owner
+		if libtcod.map_is_in_fov(fov_map, monster.x, monster.y):
+		
+			#move towards player if far away
+			if monster.distance_to(player) >= 2:
+				monster.move_towards(player.x, player.y)
+				
+			#close enough, attack! (if the player is still alive.)
+			elif player.fighter.hp > 0:
+				monster.fighter.attack(player)
+				
+class ConfusedMonster:
+	#AI for a temporarily confused monster (reverts to previous AI after a while).
+	def __init__(self, old_ai, num_turns=CONFUSE_NUM_TURNS):
+		self.old_ai = old_ai
+		self.num_turns = num_turns
+		
+	def take_turn(self):
+		if self.num_turns > 0:  #still confused...
+			#move in a random direction, and decrease the number of turns confused
+			self.owner.move(libtcod.random_get_int(0, -1, 1), libtcod.random_get_int(0, -1, 1))
+			self.num_turns -= 1
+			
+		else: #restore the previous AI (this one will be deleted because it's not reference anymore)
+			self.owner.ai = self.old_ai
+			message('The ' + self.owner.name + ' is no longer confused!', libtcod.red)
+			
+class Item:
+	#an item that can be picked up and used.
+	def __init__(self, use_function=None):
+		self.use_function = use_function
+		
+	def pick_up(self):
+		#add to the player's inventory and remove from the map
+		if len(inventory) >= 26:
+			message('Your inventory is full, cannot pick up ' + self.owner.name + '.', libtcod.red)
+		else:
+			inventory.append(self.owner)
+			objects.remove(self.owner)
+			message('You picked up a ' + self.owner.name + '!', libtcod.green)
+			
+			#special case: automatically equip, if the corresponding equipment slot is unused
+			equipment = self.owner.equipment
+			if equipment and get_equipped_in_slot(equipment.slot) is None:
+				equipment.equip()
+				
+	def drop(self):
+		#special case: if the object has the Equipment component, dequip it before dropping
+		if self.owner.equipment:
+			self.owner.equipment.dequip()
+			
+		#add to the map and remove from the player's inventory. also, place it at the player's coordinates
+		objects.append(self.owner)
+		inventory.remove(self.owner)
+		self.owner.x = player.x
+		self.owner.y = player.y
+		message('You dropped a ' + self.owner.name + '.', libtcod.yellow)
+		
+	def use(self):
