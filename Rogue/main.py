@@ -278,3 +278,218 @@ class Item:
 		message('You dropped a ' + self.owner.name + '.', libtcod.yellow)
 		
 	def use(self):
+		#special case: if the object has the Equipment component, the "use" action is to equip/dequip
+		if self.owner.equipment:
+			self.owner.equipment.toggle_equip()
+			return
+			
+		#just call the "use_function" if it is defined
+		if self.use_function is None:
+			message('The ' + self.owner.name + ' cannot be used.')
+		else:
+			if self.use_function() != 'cancelled':
+				inventory.remove(self.owner) #destroy after use, unless it was cancelled for some reason
+				
+class Equipment:
+	#an object that can be equipped, yielding bonuses.  automatically adds the Item component.
+	def __init__(self, slot, power_bonus=0, defense_bonus=0, max_hp_bonus=0):
+		self.power_bonus = power_bonus
+		self.defense_bonus = defense_bonus
+		self.max_hp_bonus = max_hp_bonus
+		
+		self.slot = slot
+		self_is_equipped = False
+		
+	def toggle_equip(self): #toggle equip/dequip status
+		if self.is_equipped:
+			self.dequip()
+		else:
+			self.equip()
+		
+	def equip(self):
+		#if the slot is already being used, dequip whatever is there first
+		old_equipment = get_equipped_in_slot(self.slot)
+		if old_equipment is not None:
+			old_equipment.dequip()
+		
+		#equip object and show a message about it
+		self.is_equipped = True
+		message('Equipped ' + self.owner.name + ' on ' + self.slot + '.', libtcod.light_green)
+		
+	def dequip(self):
+		#dequip object and show a message about it
+		if not self.is_equipped: return
+		self.is_equipped = False
+		message('Dequipped ' + self.owner.name + ' from ' + self.slot + '.', libtcod.light_yellow)
+		
+def get_equipped_in_slot):  #returns the equipment in a slot, or None if it's empty
+	for obj in inventory:
+		if obj.equipment and obj.equipment.slot == slot and obj.equipment.is_equipped:
+			return obj.equipment
+	return None
+	
+def get_all_equipped(obj):  #returns a list of equipped items
+	if obj == player:
+		equipped_list = []
+		for item in inventory:
+			if item.equipment and item.equipment.is_equipped:
+				equipped_list.append(item.equipment)
+		return equipped_list
+	else:
+		return [] #other objects have no equipment
+		
+def is_blocked(x, y):
+	#first test the map tile
+	if map[x][y].blocked:
+		return True
+		
+	#now check for any blocking objects
+	for object in objects:
+		if object.blocks and object.x == x and object.y == y:
+			return True
+			
+	return False
+	
+def create_room(room):	
+	global map
+	#go through the tiles in the rectangle and make them passable
+	for x in range(room.x1 + 1, room.x2):
+		for y in range(room.y1 + 1, room.y2):
+			map[x][y].blocked = False
+			map[x][y].block_sight = False
+			
+def create_h_tunnel(x1, x2, y):
+	global map
+	#horizontal tunnel. min() and max() are used in case x1>x2
+	for x in range(min(x1, x2), max(x1, x2) + 1):
+		map[x][y].blocked = False
+		map[x][y].block_sight = False
+		
+def create_v_tunnel(y1, y2, x):
+	global map
+	#vertical tunnel
+	for y in range(min(y1, y2), max(y1, y2) + 1):
+		map[x][y].blocked = False
+		map[x][y].block_sight = False
+		
+def make_map():
+	global map, objects, stairs
+	
+	#the list of objects with just the player
+	objects = [player]
+	
+	#fill map with "blocked" tiles
+	map = [[ Tile(True)
+				for y in range(MAP_HEIGHT) ]
+			for x in range(MAP_WIDTH) ]
+			
+	rooms = []
+	num_rooms = 0
+	
+	for r in range(MAX_ROOMS):
+		#random width and height
+		w = libtcod.random_get_int(0, ROOM_MIN_SIZE, ROOM_MAX_SIZE)
+		h = libtcod.random_get_int(0, ROOM_MIN_SIZE, ROOM_MAX_SIZE)
+		#random position without going out of the boundaries of the map
+		x = libtcod.random_get_int(0, 0, MAP_WIDTH - w - 1)
+		y = libtcod.random_get_int(0, 0, MAP_HEIGHT - h - 1)
+		
+		#"Rect" class makes rectangles easier to work with
+		new_room = Rect(x, y, w, h)
+		
+		#run through the other rooms and see if they intersect with this one
+		failed = False
+		for other_room in rooms:
+			if new_room.intersect(other_room):
+				failed = True
+				break
+				
+		if not failed:
+			#this means there are no intersections, so this room is valid
+			
+			#"paint" it to the map's tiles
+			create_room(new_room)
+			
+			#add some contents to this room, such as monsters
+			place_objects(new_room)
+			
+			#center coordinates of new room, will be useful later
+			(new_x, new_y) = new_room.center()
+			
+			if num_rooms == 0:
+				#this is the first room, where the player starts at
+				player.x = new_x
+				player.y = new_y
+			else:
+				#all rooms after the first:
+				#connect it to the previous room with a tunnel
+				
+				#center coordinates of previous room
+				(prev_x, prev_y) = rooms[num_rooms-1].center()
+				
+				#draw a coin (random number that is either 0 or 1)
+				if libtcod.random_get_int(0, 0, 1) == 1:
+					#first move horizontally, then vertically
+					create_h_tunnel(prev_x, new_x, prev_y)
+					create_v_tunnel(prev_y, new_y, new_x)
+				else:
+					#first move vertically, then horizontally
+					create_v_tunnel(prev_y, new_y, prev_x)
+					create_h_tunnel(prev_x, new_x, new_y)
+					
+			#finally, append the new room to the list
+			rooms.append(new_room)
+			num_rooms += 1
+			
+	#create stairs at the center of the last room
+	stairs = Object(new_x, new_y, '<', 'stairs', libtcod.white, always_visible=True)
+	objects.append(stairs)
+	stairs.send_to_back() #so it's drawn below the monsters
+	
+def random_choice_index(chances): #choose one option from list of chances, returning its index
+	#the dice will land on some number between 1 and the sum of the chances
+	dice = libtcod.random_get_int(0, 1, sum(chances))
+	
+	#go through all chances, keeping the sum so far
+	running_sum = 0
+	choice = 0
+	for w in chances:
+		running_sum += w
+		
+		#see if the dice landed in the part that corresponds to this choice
+		if dice <= running_sum:
+			return choice
+		choice += 1
+		
+def random_choice(chances_dict):
+	#choose one option from dictionary of chances, returning its key
+	chances = chances_dict.values()
+	strings = chances_dict.keys()
+	
+	return strings[random_choice_index(chances)]
+	
+def from_dungeon_level(table):
+	#returns a value that depends on level. the table specifies what value occurs after each level, default is 0.
+	for (value, level) in reversed(table):
+		if dungeon_level >= level:
+			return value
+	return 0
+	
+def place_objects(room):
+	#this is where we decide the chance of each monster or item appearing.
+	
+	#maximum number of monsters per room
+	max_monsters = from_dungeon_level([[2, 1], [3, 4], [5, 6]])
+	
+	#chance of each monster
+	monster_chances = {}
+	monster_chances['orc'] = 80 #orc always shows up, even if all other monsters have 0 chance
+	monster_chances['troll'] = from_dungeon_level([[15, 3], [30, 5], [60, 7]])
+	
+	#maximum number of items per room
+	max_items = from_dungeon_level([[1, 1], [2, 4]])
+	
+	#chance of each item (by default they have a chance of 0 at level 1, which then goes up)
+	item_chances = {}
+		
+	def use(self):
